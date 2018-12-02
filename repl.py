@@ -1,6 +1,8 @@
 #!/bin/env python3
 
 import cmd
+import os.path
+import shlex
 from itertools import zip_longest
 
 from server import Server
@@ -25,40 +27,60 @@ class EFSRepl(cmd.Cmd):
         super().__init__()
         self.server = Server(path)
 
-    def do_help(self, args):
-        print('TODO:', args)
+    def do_help(self, argline):
+        print('TODO:', argline)
 
-    def do_raw_read(self, arg):
-        fn = arg.encode('utf-8')
+    def do_raw_read(self, argline):
+        args = shlex.split(argline)
 
-        if self.server.has_file(fn):
-            print_raw_output(self.server.read_file(fn))
+        if len(args) != 1:
+            print('usage: raw_read <filename>')
+        elif not self.server.has_file(args[0]):
+            print('{}: file not found'.format(args[0]))
         else:
-            print('file {!r} does not exist'.format(fn))
-    do_rr = do_raw_read
+            print_raw_output(self.server.read_file(args[0]))
 
-    def do_raw_write(self, arg):
-        [fn, data] = [x.encode('utf-8') for x in arg.split(' ', 2)]
-        self.server.write_file(fn, data)
-    do_rw = do_raw_write
+    def do_raw_set(self, argline):
+        args = shlex.split(argline)
 
-    def do_raw_copy(self, arg):
-        [fn_str, src] = arg.split(' ', 2)
-        fn = fn_str.encode('utf-8')
+        if len(args) != 2:
+            print('usage: raw_put <filename> <data>')
+        else:
+            self.server.write_file(args[0], args[1].encode('latin-1'))
 
-        try:
-            with open(src, 'rb') as fp:
-                self.server.write_file(fn, fp.read())
-        except FileNotFoundError:
-            print('file {} does not exist', src)
+    def do_raw_put(self, argline):
+        args = shlex.split(argline)
+
+        if len(args) != 2:
+            print('usage: raw_put <filename> <source>')
+        elif not os.path.isfile(args[1]):
+            print('{}: file not found'.format(args[1]))
+        else:
+            with open(args[1], 'rb') as f:
+                self.server.write_file(args[0], f.read())
+
+    def do_raw_cp(self, arg):
+        args = shlex.split(argline)
+
+        if len(args) != 2:
+            print('usage: raw_cp <source> <dest>')
+        else:
+            data = self.server.read_file(args[0])
+            self.server.write_file(args[1], data)
+
+
+    def do_rm(self, argline):
+        args = shlex.split(argline)
+
+        for arg in args:
+            if not self.server.has_file(arg):
+                print('{}: file not found'.format(arg))
+            else:
+                self.server.remove_file(arg)
 
     def do_exit(self, arg):
-        self.server.flush()
-
         print('goodbye')
         return True
-    do_quit = do_exit
-    do_q    = do_exit
     do_EOF  = do_exit
 
 
@@ -67,8 +89,8 @@ class EFSRepl(cmd.Cmd):
 if __name__ == '__main__':
     import sys
 
-    if len(sys.argv) != 2:
-        print('usage: {} file'.format(sys.argv[0]))
+    if len(sys.argv) != 3:
+        print('usage: {} <fs> <user_store>'.format(sys.argv[0]))
         sys.exit(1)
 
     EFSRepl(sys.argv[1]).cmdloop()
