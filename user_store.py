@@ -33,6 +33,9 @@ class UserStore:
     def get_user_sign_sk(self, name):
         return self._get_user_kvs(name)['sign_sk']
 
+    def get_user_root_dir(self, name):
+        return self._get_user_kvs(name)['root_dir']
+
     def add_user(self, name, s):
         s_b64 = {k: base64.b64encode(v).decode('ascii') for k, v in s.items()}
         with open(self._get_user_file(name), 'w') as f:

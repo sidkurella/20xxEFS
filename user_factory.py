@@ -4,6 +4,8 @@ from Crypto.Cipher import AES
 
 import json
 
+from pyefs.name_gen import NameGenerator
+
 DEFAULT_KEY_SZ = 2048
 
 class UserFactory:
@@ -18,7 +20,9 @@ class UserFactory:
             'asym_sk': rsa_key.export_key(),
 
             'sign_pk': pub.export_key(),
-            'sign_sk': rsa_key.export_key()
+            'sign_sk': rsa_key.export_key(),
+
+            'root_dir': NameGenerator.random_filename()
         }
 
         return s
