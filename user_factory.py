@@ -22,7 +22,7 @@ class UserFactory:
             'sign_pk': pub.export_key(),
             'sign_sk': rsa_key.export_key(),
 
-            'root_dir': NameGenerator.random_filename()
+            'root_dir': NameGenerator.random_filename().encode('ascii')
         }
 
         return s
