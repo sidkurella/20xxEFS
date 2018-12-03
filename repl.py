@@ -1,11 +1,15 @@
 #!/bin/env python3
 
+import base64
 import cmd
+import json
 import os.path
 import shlex
 from itertools import zip_longest
 
 from server import Server
+from user_store import UserStore
+from user_factory import UserFactory
 
 def printable(v):
     return v >= 32 and v <= 126
@@ -23,9 +27,10 @@ class EFSRepl(cmd.Cmd):
     intro  = 'Welcome to the EFS REPL. Type help or ? for command help.'
     prompt = 'EFS> '
 
-    def __init__(self, path):
+    def __init__(self, path, user_path):
         super().__init__()
         self.server = Server(path)
+        self.user_store = UserStore(user_path)
 
     def do_help(self, argline):
         print('TODO:', argline)
@@ -59,7 +64,7 @@ class EFSRepl(cmd.Cmd):
             with open(args[1], 'rb') as f:
                 self.server.write_file(args[0], f.read())
 
-    def do_raw_cp(self, arg):
+    def do_raw_cp(self, argline):
         args = shlex.split(argline)
 
         if len(args) != 2:
@@ -78,10 +83,19 @@ class EFSRepl(cmd.Cmd):
             else:
                 self.server.remove_file(arg)
 
+    def do_useradd(self, argline):
+        args = shlex.split(argline)
+
+        if len(args) != 1:
+            print('usage: useradd <name>')
+        else:
+            self.user_store.add_user(args[0], UserFactory.gen_user_keys())
+
     def do_exit(self, arg):
         print('goodbye')
         return True
-    do_EOF  = do_exit
+
+    do_EOF = do_exit
 
 
 
@@ -93,5 +107,5 @@ if __name__ == '__main__':
         print('usage: {} <fs> <user_store>'.format(sys.argv[0]))
         sys.exit(1)
 
-    EFSRepl(sys.argv[1]).cmdloop()
+    EFSRepl(sys.argv[1], sys.argv[2]).cmdloop()
 
