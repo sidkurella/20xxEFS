@@ -2,14 +2,14 @@
 
 import base64
 import cmd
+import inspect
 import json
 import os.path
 import shlex
 from itertools import zip_longest
 
 from server import Server
-from user_store import UserStore
-from user_factory import UserFactory
+from user import User, UserStore
 
 def printable(v):
     return v >= 32 and v <= 126
@@ -33,9 +33,23 @@ class EFSRepl(cmd.Cmd):
         self.user_store = UserStore(user_path)
 
     def do_help(self, argline):
-        print('TODO:', argline)
+        print('Welcome to the EFS REPL. Type any of these commands to get')
+        print('more detailed command information.')
+        for k, v in inspect.getmembers(self, predicate=inspect.ismethod):
+            if k.startswith('do_'):
+                name = k[3:]
+                if name not in [ 'EOF' ]:
+                    if v.__doc__ is None:
+                        doc = '<no docstring>'
+                    else:
+                        lines = [ l.strip() for l in v.__doc__.split('\n') ]
+                        doc = '\n'.join([lines[0]] +
+                                [ '{}{}'.format(' ' * (2 + 12 + 3), l) for l in lines[1:]])
+
+                    print('  {:>12} - {}'.format(name, doc))
 
     def do_raw_read(self, argline):
+        """ Reads the raw contents associated with the provided filename. """
         args = shlex.split(argline)
 
         if len(args) != 1:
@@ -46,6 +60,7 @@ class EFSRepl(cmd.Cmd):
             print_raw_output(self.server.read_file(args[0]))
 
     def do_raw_set(self, argline):
+        """ Sets the raw contents associated with the provided filename. """
         args = shlex.split(argline)
 
         if len(args) != 2:
@@ -54,6 +69,9 @@ class EFSRepl(cmd.Cmd):
             self.server.write_file(args[0], args[1].encode('latin-1'))
 
     def do_raw_put(self, argline):
+        """ Sets the raw contents associated with the provided filename to
+            be the content of the provided file. """
+
         args = shlex.split(argline)
 
         if len(args) != 2:
@@ -75,6 +93,8 @@ class EFSRepl(cmd.Cmd):
 
 
     def do_rm(self, argline):
+        """ Deletes the provided file. """
+
         args = shlex.split(argline)
 
         for arg in args:
@@ -83,13 +103,13 @@ class EFSRepl(cmd.Cmd):
             else:
                 self.server.remove_file(arg)
 
-    def do_useradd(self, argline):
+    def do_user_new(self, argline):
         args = shlex.split(argline)
 
         if len(args) != 1:
-            print('usage: useradd <name>')
+            print('usage: user_new <name>')
         else:
-            self.user_store.add_user(args[0], UserFactory.gen_user_keys())
+            self.user_store.add_user(args[0], User.generate())
 
     def do_exit(self, arg):
         print('goodbye')
@@ -107,5 +127,17 @@ if __name__ == '__main__':
         print('usage: {} <fs> <user_store>'.format(sys.argv[0]))
         sys.exit(1)
 
-    EFSRepl(sys.argv[1], sys.argv[2]).cmdloop()
+    while True:
+        repl = EFSRepl(sys.argv[1], sys.argv[2])
+
+        try:
+            repl.cmdloop()
+            break
+        except:
+            import traceback
+            traceback.print_exc()
+
+            print()
+            print('**Caught exception. Restarting.**')
+            print()
 
