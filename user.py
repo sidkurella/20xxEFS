@@ -9,8 +9,7 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
 
 from pyefs.name_gen import NameGenerator
-
-DEFAULT_KEY_SIZE = 2048
+from pyefs.conf import SECURITY_PARAM
 
 class User:
     @staticmethod
@@ -18,17 +17,21 @@ class User:
         return User(**kvs)
 
     @staticmethod
-    def generate(ks=DEFAULT_KEY_SIZE):
+    def generate(ks=None):
+        if ks is None:
+            ks = SECURITY_PARAM * 8
+
         rsa_key = RSA.generate(ks)
         pub_key = rsa_key.publickey()
 
         return User(
-                sym_k   = Random.new().read(AES.block_size),
-                asym_pk = pub_key.export_key(),
-                asym_sk = rsa_key.export_key(),
-                sign_pk = pub_key.export_key(),
-                sign_sk = rsa_key.export_key(),
-                root    = NameGenerator.random_filename().encode('ascii'))
+            sym_k   = Random.new().read(AES.block_size),
+            asym_pk = pub_key.export_key(),
+            asym_sk = rsa_key.export_key(),
+            sign_pk = pub_key.export_key(),
+            sign_sk = rsa_key.export_key(),
+            root    = NameGenerator.random_filename().encode('ascii')
+        )
 
     def __init__(self,
                  sym_k=None,
