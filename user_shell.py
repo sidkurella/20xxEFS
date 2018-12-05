@@ -11,37 +11,66 @@ from itertools import zip_longest
 from server import Server
 from user import User, UserStore
 
-from pyefs.fs import Directory
+from pyefs.auth import UserAuth
+from pyefs.fs import Directory, File
 from pyefs.name_gen import NameGenerator
 
 class UserRepl(cmd.Cmd):
     intro  = 'Welcome to the User REPL. Type help or ? for command help.'
-    prompt = 'User> '
+    prompt = 'user> '
 
     def __init__(self, path, user_path, username):
         super().__init__()
         self.server = Server(path)
         self.user_store = UserStore(user_path)
+        self.username = username
 
         try:
             self.user = self.user_store.get_user(username)
         except FileNotFoundError:
+            print('INFO: generating new user {}'.format(username))
+
             self.user = User.generate()
             self.user_store.add_user(username, self.user)
 
+        # Create auth for user
+        self.auth = UserAuth.default(username, self.user.sym_k, None, None)
+
         # Start at the root directory.
-        print(self.user.root)
-        self.cur_dir = Directory(
-            self.user.root,
-            self.server,
-            self.user.sym_k
-        )
+        self.root    = Directory(self.auth, self.server, self.user.root)
+        self.cur_dir = self.root
 
-        # List of path elements in order.
-        self.dir_path = []
+        # Run postcommand setup
+        self.postcmd(False, None)
 
-    def _get_path(self):
-        return '/' + '/'.join(self.dir_path)
+
+    def _getpath(self, path):
+        current = self.cur_dir
+
+        if path is None or path == '':
+            return current
+
+        comps = path.split('/')
+
+        if comps[0] == '':
+            current = self.root
+
+        for name in comps:
+            if name != '':
+                if name == '..':
+                    if current.parent is not None:
+                        current = current.parent
+                elif name in current:
+                    current = current[name]
+                else:
+                    return None
+
+        return current
+
+
+    def postcmd(self, stop, line):
+        self.prompt = '{} $ {}> '.format(self.username, self.cur_dir.path)
+        return stop
 
     def do_help(self, argline):
         print('Welcome to the User REPL. Type any of these commands to get')
@@ -61,74 +90,141 @@ class UserRepl(cmd.Cmd):
 
     def do_pwd(self, argline):
         """ Prints the current working directory. """
-        print(self._get_path())
+        print(self.cur_dir.path)
 
     def do_cd(self, argline):
-        """ Changes the current working directory.
-            Currently only takes relative paths."""
+        """ Changes the current working directory. """
         args = shlex.split(argline)
 
-        if len(args) != 1:
+        if len(args) > 1:
             print('usage: cd <dir_name>')
+            return
 
-        if args[0] == '..':
-            # cd to parent
-            name = self.cur_dir.parent
-            if name is None:
-                print("at root directory")
-                return
-            self.dir_path.pop()
+        new_dir = self.cur_dir
 
+        if len(args) == 0:
+            new_dir = self.root
+        elif args[0] == '-':
+            new_dir = self.old_dir
         else:
-            if not self.cur_dir.has_entry(args[0]):
-                print('{}: directory not found'.format(args[0]))
-                return
+            new_dir = self._getpath(args[0])
 
-            self.dir_path.append(args[0])
-            name = self.cur_dir.get(args[0])
+        if new_dir is None:
+            print('{}: no such directory'.format(args[0]))
+            return
 
-        # Start at the root directory.
-        self.cur_dir = Directory(
-            name,
-            self.server,
-            self.user.sym_k
-        )
+        self.old_dir = self.cur_dir
+        self.cur_dir = new_dir
 
     def do_ls(self, argline):
-        """ Lists contents of the current working directory.
-            Currently only lists current working directories contents."""
-        for filename in self.cur_dir:
-            print(filename)
-
-    def do_mkdir(self, argline):
-        """ Makes a directory. """
+        """ Lists contents of the current working directory or provided
+            directory. """
         args = shlex.split(argline)
 
-        if len(args) != 1:
-            print('usage: mkdir <dir_name>')
+        if len(args) == 0:
+            cur = self.cur_dir
+        else:
+            cur = self._getpath(args[0])
+            if cur is None:
+                print('{}: no such directory'.format(args[0]))
+                return
 
-        name = NameGenerator.random_filename()
+        print('  '.join(fn for fn in cur))
 
-        Directory(
-            name,
-            self.server,
-            self.user.sym_k,
-            parent=self.cur_dir.get_listing()
-        ).flush()
 
-        self.cur_dir.add_entry(args[0], name)
+    def do_mkdir(self, argline):
+        """ Makes the specified directories. """
+        args = shlex.split(argline)
+
+        if len(args) == 0:
+            print('usage: mkdir <file> <file...>')
+            return
+
+        for arg in args:
+            (head, tail) = os.path.split(arg.rstrip('/'))
+
+            if tail == '':
+                raise ValueError('should never occur')
+
+            parent_dir = self._getpath(head)
+
+            if parent_dir is None:
+                print('{}: file not found'.format(arg))
+                continue
+
+            if tail in parent_dir:
+                print('{}: already exists'.format(arg))
+                continue
+
+            parent_dir.mkdir(tail)
+
 
     def do_rm(self, argline):
         """ Deletes the provided file. """
         args = shlex.split(argline)
 
+        if len(args) == 0:
+            print('usage: rm <file> <file...>')
+            return
+
         for arg in args:
-            if not self.cur_dir.has_entry(arg):
+            (head, tail) = os.path.split(arg.rstrip('/'))
+
+            if tail == '':
+                raise ValueError('should never occur')
+
+            parent_dir = self._getpath(head)
+
+            if parent_dir is None:
                 print('{}: file not found'.format(arg))
-            else:
-                disk_name = self.cur_dir.get(arg)
-                self.server.remove_file(disk_name)
-                self.cur_dir.rm_entry(arg)
+                continue
+
+            if tail not in parent_dir:
+                print('{}: file not found'.format(arg))
+                continue
+
+            if not isinstance(parent_dir[tail], File):
+                print('{}: not a file'.format(arg))
+                continue
+
+            parent_dir[tail].delete()
+            del parent_dir[tail]
+
+    def do_rmdir(self, argline):
+        """ Deletes the provided directories. """
+        args = shlex.split(argline)
+
+        if len(args) == 0:
+            print('usage: rmdir <dir> <dir...>')
+            return
+
+        for arg in args:
+            (head, tail) = os.path.split(arg.rstrip('/'))
+
+            if tail == '':
+                raise ValueError('should never occur')
+
+            parent_dir = self._getpath(head)
+
+            if parent_dir is None:
+                print('{}: file not found'.format(arg))
+                continue
+
+            if tail not in parent_dir:
+                print('{}: file not found'.format(arg))
+                continue
+
+            del_dir = parent_dir[tail]
+            if not isinstance(parent_dir[tail], Directory):
+                print('{}: not a directory'.format(arg))
+                continue
+
+            if len(del_dir) != 0:
+                print('{}: directory not empty'.format(arg))
+                continue
+
+            del_dir.delete()
+            del parent_dir[tail]
 
     def do_exit(self, arg):
         print('goodbye')
