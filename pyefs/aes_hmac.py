@@ -1,3 +1,5 @@
+import pickle
+
 from Crypto.Hash import HMAC, SHA256
 from Crypto.Cipher import AES
 from Crypto import Random
@@ -24,13 +26,15 @@ class AES_HMAC:
         ciph = aes.encrypt(plaintext + padding_bytes * bytes([padding_bytes]))
         tag = hmac.update(ciph).digest()
 
-        return {
+        return pickle.dumps({
             'iv': iv,
             'ciphertext': ciph,
             'tag': tag
-        }
+        })
 
-    def decrypt(self, ciph):
+    def decrypt(self, ciphertext):
+        ciph = pickle.loads(ciphertext)
+
         aes = AES.new(self.key, AES.MODE_CBC, ciph['iv'])
         hmac = HMAC.new(self.key, digestmod=SHA256)
 
