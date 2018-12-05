@@ -34,8 +34,14 @@ class File(FilesystemObject):
         self.parent = parent
 
         self.perm_blocks = dict()
+        self.ro_copies = []
+        self.main_copy = None
 
     def add_perm(self, username, pk, has_write):
+        pass
+
+class FileContents(FilesystemObject):
+    def get_hash(self):
         pass
 
 class FilePermBlock:
@@ -50,7 +56,10 @@ class FilePermBlock:
         self.k_r = k_r # Read key.
         self.k_w = k_w # Write key.
         self.sk_f = sk_f # File signing key.
-        self.contents = contents # Disk name of file contents.
+        self.contents = contents # FileContents object.
+
+    def serialize(self):
+        pass
 
 class Directory(FilesystemObject):
     def __init__(self, user, server, raw_name, path='', parent=None):
