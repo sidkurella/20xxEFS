@@ -54,13 +54,30 @@ class Directory(FilesystemObject):
     def get(self, key, default=None):
         return self.entries.get(key, default)
 
-class File(FilesystemObject):
-    def __init__(self, disk_name, server):
+class FileMetadata(FilesystemObject):
+    @staticmethod
+    def load(server, disk_name):
+        return pickle.loads(server.read_file(disk_name))
+
+    def __init__(self, disk_name, server, owner_pk):
         super().__init__(disk_name, server)
         self.perm_blocks = dict()
+        self.owner_pk = owner_pk
 
-    def add_perm(self, username, pk, acc_type):
+    def add_perm(self, username, pk, has_write):
         pass
 
 class FilePermBlock:
-    pass
+    def __init__(self, username, pk, k_r, k_w, sk_f, contents):
+        if k_w is None or sk_f is None:
+            self.has_write = False
+        else:
+            self.has_write = True
+
+        self.username = username
+        self.user_pk = pk # Key to encrypt the perm block under.
+        self.k_r = k_r # Read key.
+        self.k_w = k_w # Write key.
+        self.sk_f = sk_f # File signing key.
+        self.contents = contents # Disk name of file contents.
+
