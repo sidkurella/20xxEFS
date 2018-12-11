@@ -14,6 +14,7 @@ from user import User, UserStore
 from pyefs.auth import UserAuth
 from pyefs.fs import Directory, File
 from pyefs.name_gen import NameGenerator
+from pyefs.aes_hmac import AES_HMAC
 
 class UserRepl(cmd.Cmd):
     intro  = 'Welcome to the User REPL. Type help or ? for command help.'
@@ -67,7 +68,6 @@ class UserRepl(cmd.Cmd):
 
         return current
 
-
     def postcmd(self, stop, line):
         self.prompt = '{} $ {}> '.format(self.username, self.cur_dir.path)
         return stop
@@ -116,6 +116,49 @@ class UserRepl(cmd.Cmd):
         self.old_dir = self.cur_dir
         self.cur_dir = new_dir
 
+    def do_read(self, argline):
+        """Reads an encrypted file from the server to the user's local machine,
+        provided that they're allowed to do this."""
+        args = shlex.split(argline)
+
+        if len(args) != 2:
+            print('''usage: read <src> <dst>''')
+            return
+
+        src, dst = args[0], args[1]
+        (head, tail) = os.path.split(src.rstrip('/'))
+
+        if tail == '':
+            raise ValueError('should never occur')
+
+        parent_dir = self._getpath(head)
+
+        if parent_dir is None or tail not in parent_dir:
+            print('{}: file not found'.format(src))
+            return
+
+        # The directory entry gives us the file permission record.
+        fpr = parent_dir[tail]
+        # It should contain a permission block for this user encrypted under
+        # their public key.
+        # TODO implement user.public_key() (preferably something that accounts
+        # for having different pks for dig sig and encryption schemes)
+        encrypted_block = fpr.perm_blocks.get(self.user.public_key())
+        if encrypted_block is None:
+            print('error: can\'t access file without read permissions')
+        perm_block = pickle.loads(self.user.decrypt(encrypted_block))
+        # The permission block will contain the location of the actual file
+        # along with the key we need to decrypt it.
+        srcfile = perm_block.fileptr
+        k_r = perm_block.k_r
+        plaintext = AES_HMAC(k_r).decrypt(self.server.read_file(srcfile))
+
+        try:
+            with open(dst, 'wb') as f:
+                f.write(plaintext)
+        except OSError:
+            print('error: could not write to {}'.format(dst))
+
     def do_ls(self, argline):
         """ Lists contents of the current working directory or provided
             directory. """
@@ -130,7 +173,6 @@ class UserRepl(cmd.Cmd):
                 return
 
         print('  '.join(fn for fn in cur))
-
 
     def do_mkdir(self, argline):
         """ Makes the specified directories. """
@@ -157,7 +199,6 @@ class UserRepl(cmd.Cmd):
                 continue
 
             parent_dir.mkdir(tail)
-
 
     def do_rm(self, argline):
         """ Deletes the provided file. """
@@ -231,8 +272,6 @@ class UserRepl(cmd.Cmd):
         return True
 
     do_EOF = do_exit
-
-
 
 
 if __name__ == '__main__':
