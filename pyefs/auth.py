@@ -16,3 +16,12 @@ class UserAuth:
         return self.sym_ae.encrypt(data)
     def decrypt_symmetric(self, data):
         return self.sym_ae.decrypt(data)
+
+    def encrypt(self, data):
+        pass
+    def decrypt(self, data):
+        pass
+    def sign(self, data):
+        pass
+    def verify(self, data):
+        pass
