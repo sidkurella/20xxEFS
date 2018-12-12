@@ -137,25 +137,12 @@ class UserRepl(cmd.Cmd):
             print('{}: file not found'.format(src))
             return
 
-        # The directory entry gives us the file permission record.
+        # The directory entry gives us the file permission record, which will
+        # allow us to read the file.
         fpr = parent_dir[tail]
-        # It should contain a permission block for this user encrypted under
-        # their public key.
-        # TODO implement user.public_key() (preferably something that accounts
-        # for having different pks for dig sig and encryption schemes)
-        encrypted_block = fpr.perm_blocks.get(self.user.public_key())
-        if encrypted_block is None:
-            print('error: can\'t access file without read permissions')
-        perm_block = pickle.loads(self.user.decrypt(encrypted_block))
-        # The permission block will contain the location of the actual file
-        # along with the key we need to decrypt it.
-        srcfile = perm_block.fileptr
-        k_r = perm_block.k_r
-        plaintext = AES_HMAC(k_r).decrypt(self.server.read_file(srcfile))
-
         try:
             with open(dst, 'wb') as f:
-                f.write(plaintext)
+                f.write(fpr.get_file().read())
         except OSError:
             print('error: could not write to {}'.format(dst))
 
