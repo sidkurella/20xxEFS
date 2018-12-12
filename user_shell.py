@@ -159,6 +159,43 @@ class UserRepl(cmd.Cmd):
         except OSError:
             print('error: could not write to {}'.format(dst))
 
+    def do_write(self, argline):
+        """Writes a plaintext file from the user's local machine to the server,
+        encrypting it in the process. If the file doesn't already exist on the
+        server, this will create a new file and make the user its owner. If it
+        does exist, its permissions will dictate whether the user can write to
+        it or not.
+        """
+        args = shlex.split(argline)
+
+        if len(args) != 2:
+            print('usage: write <src> <dst>')
+            return
+
+        src, dst = args[0], args[1]
+        (head, tail) = os.path.split(dst.rstrip('/'))
+
+        if tail == '':
+            raise ValueError('should never occur')
+
+        parent_dir = self._getpath(head)
+
+        if parent_dir is None:
+            print('{}: directory does not exist'.format(head))
+
+        if tail not in parent_dir:
+            # Create a new file and set its owner to this user.
+            parent_dir.touch(tail)
+
+        try:
+            with open(src, 'rb') as f:
+                data = src.read()
+        except OSError:
+            print('error: could not read file {}'.format(src))
+            return
+
+        parent_dir[tail].get_file().write(data)
+
     def do_ls(self, argline):
         """ Lists contents of the current working directory or provided
             directory. """

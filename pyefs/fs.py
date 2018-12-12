@@ -52,7 +52,7 @@ class File(FilesystemObject):
         k_r = perm_block.k_r
         return AES_HMAC(k_r).decrypt(self._read())
 
-class FilePermissionRecord(FileSystemObject):
+class FilePermissionRecord(FilesystemObject):
     def __init__(self, user, owner, server, raw_name, path=''):
         super().__init__(user, server, raw_name, path)
         self.owner = owner
