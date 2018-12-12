@@ -35,7 +35,12 @@ class UserRepl(cmd.Cmd):
             self.user_store.add_user(username, self.user)
 
         # Create auth for user
-        self.auth = UserAuth.default(username, self.user.sym_k, None, None)
+        self.auth = UserAuth.default(
+                username,
+                self.user.sym_k,
+                (self.user.asym_pk, self.user.asym_sk),
+                (self.user.sign_pk, self.user.sign_sk)
+        )
 
         # Start at the root directory.
         self.root    = Directory(self.auth, self.server, self.user.root)
