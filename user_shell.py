@@ -122,7 +122,7 @@ class UserRepl(cmd.Cmd):
         args = shlex.split(argline)
 
         if len(args) != 2:
-            print('''usage: read <src> <dst>''')
+            print('usage: read <src> <dst>')
             return
 
         src, dst = args[0], args[1]
