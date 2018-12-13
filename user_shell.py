@@ -392,11 +392,16 @@ if __name__ == '__main__':
         try:
             repl.cmdloop()
             break
-        except:
-            import traceback
-            traceback.print_exc()
+        except Exception as ex:
+            import os
+
+            if os.environ.get('SDEBUG') == 'Y':
+                import traceback
+                traceback.print_exc()
+            else:
+                print(ex)
 
             print()
-            print('**Caught exception. Restarting.**')
+            print('*** Caught exception. Restarting. ***')
             print()
 

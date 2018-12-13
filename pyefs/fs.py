@@ -3,6 +3,8 @@ import pickle
 import traceback
 
 from Crypto.PublicKey import ECC
+from Crypto.Signature import DSS
+from Crypto.Hash import SHA256
 
 from .aes_hmac import AES_HMAC
 from .auth import encrypt_keygen, sign_keygen, sym_keygen
@@ -32,10 +34,11 @@ class FilesystemObject:
         return self._path
 
 class File(FilesystemObject):
-    def __init__(self, user, perms, server, raw_name, path=''):
+    def __init__(self, user, perms, meta, server, raw_name, path=''):
         super().__init__(user, server, raw_name, path)
 
         self.perms = perms
+        self.meta  = meta
 
     def write(self, data=b''):
         if not self.perms or not self.perms.can_write():
@@ -44,12 +47,26 @@ class File(FilesystemObject):
         encryption = AES_HMAC(self.perms.k_w).encrypt(data)
         self._write(encryption)
 
+        copy_enc = AES_HMAC(self.perms.k_r).encrypt(data)
+        for copy in self.meta.copies:
+            self.server.write_file(copy, copy_enc)
+
+        h = SHA256.new(data)
+        self.meta.tag = DSS.new(ECC.import_key(self.perms.s_sk), 'fips-186-3').sign(h)
+        self.meta._flush()
+
     def read(self):
         if not self.perms or not self.perms.can_read():
             raise ValueError('insufficient permissions to read file')
 
         key = self.perms.k_w if self.perms.can_write() else self.perms.k_r
-        return AES_HMAC(key).decrypt(self._read())
+        data = AES_HMAC(key).decrypt(self._read())
+
+        h = SHA256.new(data)
+        dss = DSS.new(ECC.import_key(self.perms.s_pk), 'fips-186-3')
+        dss.verify(h, self.meta.tag)
+
+        return data
 
 class FileMetadata(FilesystemObject):
     def __init__(self, user, owner, server, raw_name, path='', parent=None):
@@ -61,15 +78,21 @@ class FileMetadata(FilesystemObject):
         # Mapping of public keys to pickled + hybrid encrypted FilePermissions.
         self.perms  = dict()
         self.copies = []
+        self.tag    = ''
 
         if self.exists():
             self._load()
 
     def _flush(self):
+        perms = self.permissions()
+        if not perms.can_write():
+            raise ValueError('only a file\'s owner can modify its permissions')
+
         fpr_bytes = pickle.dumps({
             'owner':  self.owner,
             'perms':  self.perms,
-            'copies': self.copies
+            'copies': AES_HMAC(perms.k_w).encrypt(pickle.dumps(self.copies)),
+            'tag':    self.tag
         })
 
         # Sign with user's dig sig sk, which should be the owner's sk. If it
@@ -96,9 +119,13 @@ class FileMetadata(FilesystemObject):
             raise ValueError('FPR signature is invalid')
 
         fpr = pickle.loads(fpr_bytes)
-        self.owner  = fpr['owner']
-        self.perms  = fpr['perms']
-        self.copies = fpr['copies']
+        self.owner = fpr['owner']
+        self.perms = fpr['perms']
+        self.tag   = fpr['tag']
+
+        perms = self.permissions()
+        if perms.can_write():
+            self.copies = pickle.loads(AES_HMAC(perms.k_w).decrypt(fpr['copies']))
 
     def permissions(self):
         '''Returns the decrypted permission block at the current user's
@@ -115,7 +142,7 @@ class FileMetadata(FilesystemObject):
         # Index into permission blocks with this user's pk.
         perms = self.permissions()
         if perms is not None:
-            return File(self.user, perms, self.server, perms.fileptr, self.path)
+            return File(self.user, perms, self, self.server, perms.fileptr, self.path)
 
     def grant(self, user, writable=False):
         '''Encrypts and stores a permission block for the provided user with
@@ -134,38 +161,39 @@ class FileMetadata(FilesystemObject):
         if user_pk == self.owner:
             k_r = sym_keygen()
             k_w = sym_keygen()
-            sk_f = sign_keygen().export_key(format="PEM")
+
+            s_key = sign_keygen()
+            s_sk = s_key.export_key(format="PEM")
+            s_pk = s_key.public_key().export_key(format="PEM")
             fileptr = NameGenerator.random_filename()
         else:
             owner_fp = self.permissions()
 
             k_r = owner_fp.k_r
             k_w = owner_fp.k_w if writable else None
-            sk_f = owner_fp.sk_f if writable else None
+            s_pk = owner_fp.s_pk
+            s_sk = owner_fp.s_sk if writable else None
             fileptr = owner_fp.fileptr
 
             if not writable:
                 fileptr = NameGenerator.random_filename()
+                self.copies.append(fileptr)
 
                 data = self.file().read()
                 encryption = AES_HMAC(k_r).encrypt(data)
                 self.server.write_file(fileptr, encryption)
 
-        perms = FilePermission(k_r, k_w, sk_f, fileptr)
+        perms = FilePermission(k_r, k_w, s_pk, s_sk, fileptr)
         self.perms[user_pk] = user.hybrid_encrypt(perms)
 
         self._flush()
 
 class FilePermission:
-    def __init__(self, k_r, k_w, sk_f, fileptr):
-        if k_w is None or sk_f is None:
-            self.has_write = False
-        else:
-            self.has_write = True
-
+    def __init__(self, k_r, k_w, s_pk, s_sk, fileptr):
         self.k_r = k_r             # Read key.
         self.k_w = k_w             # Write key.
-        self.sk_f = sk_f           # File signing public key.
+        self.s_pk = s_pk           # File signing public key.
+        self.s_sk = s_sk           # File signing private key.
         self.fileptr = fileptr     # Raw name of file associated with this
                                    # block. If self.has_write = True, then this
                                    # is the raw name of the main copy of the
