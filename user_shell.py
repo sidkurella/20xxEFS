@@ -203,11 +203,24 @@ class UserRepl(cmd.Cmd):
 
         parent_dir[tail].file().write(data)
 
+
     def do_grant_rw(self, argline):
+        """ Grants read-write permissions on the specified file, for the
+            specified user. """
+        self._grant(True, argline)
+
+    def do_grant_ro(self, argline):
+        """ Grants read-only permissions on the specified file, for the
+            specified user. """
+        self._grant(False, argline)
+
+    def _grant(self, writable, argline):
+        """ Grants specified permission level on the specified file, for the
+            specified user. """
         args = shlex.split(argline)
 
         if len(args) != 2:
-            print('usage: grant_rw <file> <user>')
+            print('usage: grant_* <file> <user>')
             return
 
         f = self._getpath(args[0])
@@ -216,7 +229,7 @@ class UserRepl(cmd.Cmd):
             return
 
         user = self.user_store.get_user_public(args[1]).auth()
-        f.grant(user, writable=True)
+        f.grant(user, writable)
 
         token = user.hybrid_encrypt((self.auth.public_key(), f.raw_name))
 

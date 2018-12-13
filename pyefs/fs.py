@@ -147,6 +147,7 @@ class FileMetadata(FilesystemObject):
             if not writable:
                 fileptr = NameGenerator.random_filename()
 
+                data = self.file().read()
                 encryption = AES_HMAC(k_r).encrypt(data)
                 self.server.write_file(fileptr, encryption)
 
