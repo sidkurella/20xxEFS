@@ -85,9 +85,6 @@ class FileMetadata(FilesystemObject):
 
     def _flush(self):
         perms = self.permissions()
-        if not perms.can_write():
-            raise ValueError('only a file\'s owner can modify its permissions')
-
         fpr_bytes = pickle.dumps({
             'owner':  self.owner,
             'perms':  self.perms,
@@ -95,13 +92,8 @@ class FileMetadata(FilesystemObject):
             'tag':    self.tag
         })
 
-        # Sign with user's dig sig sk, which should be the owner's sk. If it
-        # doesn't verify with the owner's pk, don't flush.
+        # Sign with user's dig sig sk, which should be the owner's sk.
         signature = self.user.sign(fpr_bytes)
-
-        owner_pk = ECC.import_key(self.owner)
-        if not self.user.verify(fpr_bytes, signature, owner_pk):
-            raise ValueError('only a file\'s owner can modify its permissions')
 
         self._write(pickle.dumps({
             'record':    fpr_bytes,
@@ -113,10 +105,6 @@ class FileMetadata(FilesystemObject):
 
         fpr_bytes = data['record']
         signature = data['signature']
-
-        owner_pk = ECC.import_key(self.owner)
-        if not self.user.verify(fpr_bytes, signature, owner_pk):
-            raise ValueError('FPR signature is invalid')
 
         fpr = pickle.loads(fpr_bytes)
         self.owner = fpr['owner']
@@ -147,9 +135,6 @@ class FileMetadata(FilesystemObject):
     def grant(self, user, writable=False):
         '''Encrypts and stores a permission block for the provided user with
            read or write permissions. '''
-
-        # self._flush() will make sure of this anyways, but no need to do the
-        # extra work of pickling and encrypting to find out.
         self_pk = self.user.public_key()
         if self_pk != self.owner:
             raise ValueError('only the owner can change a file\'s permissions')
