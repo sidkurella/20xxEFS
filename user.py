@@ -4,12 +4,11 @@ import os
 import os.path
 import pickle
 
-from Crypto import Random
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.PublicKey import RSA, ECC
 
+from pyefs.auth import encrypt_keygen, sign_keygen, sym_keygen
 from pyefs.name_gen import NameGenerator
-from pyefs.conf import SECURITY_PARAM, AES_KEY_SZ
 
 class User:
     @staticmethod
@@ -18,17 +17,14 @@ class User:
 
     @staticmethod
     def generate(ks=None):
-        if ks is None:
-            ks = SECURITY_PARAM * 8
-
-        rsa_key = RSA.generate(ks)
+        rsa_key = encrypt_keygen(ks)
         rsa_pub = rsa_key.publickey()
 
-        dsa_key = ECC.generate(curve='P-256')
+        dsa_key = sign_keygen()
         dsa_pub = dsa_key.public_key()
 
         return User(
-            sym_k   = Random.new().read(AES_KEY_SZ),
+            sym_k   = sym_keygen(),
             asym_pk = rsa_pub.export_key(),
             asym_sk = rsa_key.export_key(),
             sign_pk = dsa_pub.export_key(format="PEM"),

@@ -12,7 +12,7 @@ from server import Server
 from user import User, UserStore
 
 from pyefs.auth import UserAuth
-from pyefs.fs import Directory, File
+from pyefs.fs import Directory, File, FilePermissionRecord
 from pyefs.name_gen import NameGenerator
 from pyefs.aes_hmac import AES_HMAC
 
@@ -112,7 +112,11 @@ class UserRepl(cmd.Cmd):
         elif args[0] == '-':
             new_dir = self.old_dir
         else:
-            new_dir = self._getpath(args[0])
+            result = self._getpath(args[0])
+            if isinstance(result, FilePermissionRecord):
+                print('{}: not a directory'.format(args[0]))
+                return
+            new_dir = result
 
         if new_dir is None:
             print('{}: no such directory'.format(args[0]))
@@ -181,7 +185,7 @@ class UserRepl(cmd.Cmd):
 
         try:
             with open(src, 'rb') as f:
-                data = src.read()
+                data = f.read()
         except OSError:
             print('error: could not read file {}'.format(src))
             return
@@ -253,7 +257,7 @@ class UserRepl(cmd.Cmd):
                 print('{}: file not found'.format(arg))
                 continue
 
-            if not isinstance(parent_dir[tail], File):
+            if not isinstance(parent_dir[tail], FilePermissionRecord):
                 print('{}: not a file'.format(arg))
                 continue
 
