@@ -1,3 +1,5 @@
+import pickle
+
 from Crypto import Random
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Hash import SHA256
@@ -24,7 +26,8 @@ def sym_keygen():
 class UserAuth:
     @staticmethod
     def default(name, sym_k, asym_k, sign_k):
-        asym_sk, sign_sk = asym_k[1], sign_k[1]
+        asym_sk = asym_k[1] if asym_k[1] is not None else asym_k[0]
+        sign_sk = sign_k[1] if sign_k[1] is not None else sign_k[0]
         return UserAuth(
                 name,
                 sym_k,
@@ -53,6 +56,35 @@ class UserAuth:
     def decrypt(self, data):
         '''Decrypt the data using the user's secret key.'''
         return PKCS1_OAEP.new(self.asym_ae).decrypt(data)
+
+    def hybrid_encrypt(self, data, pk=None):
+        # Use hybrid encryption to encrypt the permission block, since it will
+        # be too long to encrypt with just the public key scheme.
+        key = sym_keygen()
+        encrypted_key = self.encrypt(key, pk)
+        encrypted_block = AES_HMAC(key).encrypt(pickle.dumps(data))
+
+        return pickle.dumps({
+            'encrypted_key': encrypted_key,
+            'encrypted_block': encrypted_block
+        })
+
+    def hybrid_decrypt(self, data):
+        hybrid_encrypted = pickle.loads(data)
+
+        encrypted_key   = hybrid_encrypted['encrypted_key']
+        encrypted_block = hybrid_encrypted['encrypted_block']
+
+        # First, we need to decrypt the encrypted key using this user's
+        # secret key.
+        key = self.decrypt(encrypted_key)
+
+        # Next, we can read the block by decrypting it with the newly
+        # decrypted symmetric key.
+        try:
+            return pickle.loads(AES_HMAC(key).decrypt(encrypted_block))
+        except pickle.UnpicklingError:
+            raise ValueError('hybrid decrypted incorrectly')
 
     def sign(self, data):
         '''Sign the data using the user's secret key and return the signature.

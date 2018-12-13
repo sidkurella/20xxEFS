@@ -11,8 +11,7 @@ from itertools import zip_longest
 from server import Server
 from user import User, UserStore
 
-from pyefs.auth import UserAuth
-from pyefs.fs import Directory, File, FilePermissionRecord
+from pyefs.fs import Directory, File, FileMetadata
 from pyefs.name_gen import NameGenerator
 from pyefs.aes_hmac import AES_HMAC
 
@@ -31,16 +30,11 @@ class UserRepl(cmd.Cmd):
         except FileNotFoundError:
             print('INFO: generating new user {}'.format(username))
 
-            self.user = User.generate()
+            self.user = User.generate(username)
             self.user_store.add_user(username, self.user)
 
         # Create auth for user
-        self.auth = UserAuth.default(
-                username,
-                self.user.sym_k,
-                (self.user.asym_pk, self.user.asym_sk),
-                (self.user.sign_pk, self.user.sign_sk)
-        )
+        self.auth = self.user.auth()
 
         # Start at the root directory.
         self.root    = Directory(self.auth, self.server, self.user.root)
@@ -113,7 +107,7 @@ class UserRepl(cmd.Cmd):
             new_dir = self.old_dir
         else:
             result = self._getpath(args[0])
-            if isinstance(result, FilePermissionRecord):
+            if isinstance(result, FileMetadata):
                 print('{}: not a directory'.format(args[0]))
                 return
             new_dir = result
@@ -155,6 +149,22 @@ class UserRepl(cmd.Cmd):
         except OSError:
             print('error: could not write to {}'.format(dst))
 
+    def do_cat(self, argline):
+        args = shlex.split(argline)
+
+        if len(args) == 0:
+            print('usage: cat <files>')
+            return
+
+        for arg in args:
+            f = self._getpath(arg)
+
+            if not isinstance(f, FileMetadata):
+                print('{}: not a file'.format(arg))
+                return
+
+            print(f.file().read().decode('utf-8'), end='')
+
     def do_write(self, argline):
         """Writes a plaintext file from the user's local machine to the server,
         encrypting it in the process. If the file doesn't already exist on the
@@ -182,6 +192,7 @@ class UserRepl(cmd.Cmd):
         if tail not in parent_dir:
             # Create a new file and set its owner to this user.
             parent_dir.touch(tail)
+            parent_dir[tail].grant(self.auth, writable=True)
 
         try:
             with open(src, 'rb') as f:
@@ -190,7 +201,26 @@ class UserRepl(cmd.Cmd):
             print('error: could not read file {}'.format(src))
             return
 
-        parent_dir[tail].get_file().write(data)
+        parent_dir[tail].file().write(data)
+
+    def do_grant_rw(self, argline):
+        args = shlex.split(argline)
+
+        if len(args) != 2:
+            print('usage: grant_rw <file> <user>')
+            return
+
+        f = self._getpath(args[0])
+        if not isinstance(f, FileMetadata):
+            print('{}: not a file'.format(f))
+            return
+
+        user = self.user_store.get_user_public(args[1]).auth()
+        f.grant(user, writable=True)
+
+        token = user.hybrid_encrypt((self.auth.public_key(), f.raw_name))
+
+        print(base64.b64encode(token).encode('ascii'))
 
     def do_ls(self, argline):
         """ Lists contents of the current working directory or provided
@@ -257,7 +287,7 @@ class UserRepl(cmd.Cmd):
                 print('{}: file not found'.format(arg))
                 continue
 
-            if not isinstance(parent_dir[tail], FilePermissionRecord):
+            if not isinstance(parent_dir[tail], FileMetadata):
                 print('{}: not a file'.format(arg))
                 continue
 
