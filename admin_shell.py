@@ -109,7 +109,7 @@ class EFSRepl(cmd.Cmd):
         if len(args) != 1:
             print('usage: user_new <name>')
         else:
-            self.user_store.add_user(args[0], User.generate())
+            self.user_store.add_user(args[0], User.generate(args[0]))
 
     def do_exit(self, arg):
         print('goodbye')
