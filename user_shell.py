@@ -233,7 +233,7 @@ class UserRepl(cmd.Cmd):
 
         token = user.hybrid_encrypt((self.auth.public_key(), f.raw_name))
 
-        print(base64.b64encode(token).encode('ascii'))
+        print(base64.b64encode(token).decode('ascii'))
 
     def do_ls(self, argline):
         """ Lists contents of the current working directory or provided
