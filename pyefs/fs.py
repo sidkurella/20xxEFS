@@ -134,7 +134,7 @@ class FileMetadata(FilesystemObject):
         if user_pk == self.owner:
             k_r = sym_keygen()
             k_w = sym_keygen()
-            sk_f = sign_keygen().public_key().export_key(format="PEM")
+            sk_f = sign_keygen().export_key(format="PEM")
             fileptr = NameGenerator.random_filename()
         else:
             owner_fp = self.permissions()
