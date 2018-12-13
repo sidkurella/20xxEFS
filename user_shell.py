@@ -145,7 +145,7 @@ class UserRepl(cmd.Cmd):
         fpr = parent_dir[tail]
         try:
             with open(dst, 'wb') as f:
-                f.write(fpr.get_file().read())
+                f.write(fpr.file().read())
         except OSError:
             print('error: could not write to {}'.format(dst))
 
