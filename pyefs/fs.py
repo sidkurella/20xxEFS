@@ -265,3 +265,9 @@ class Directory(FilesystemObject):
                 self.path + '/' + name, self)
 
         self[name] = f
+
+    def receive(self, name, raw_name, pk):
+        f = FileMetadata(self.user, pk, self.server, raw_name,
+                self.path + '/' + name, self)
+
+        self[name] = f

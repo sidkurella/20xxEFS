@@ -235,6 +235,35 @@ class UserRepl(cmd.Cmd):
 
         print(base64.b64encode(token).decode('ascii'))
 
+    def do_receive(self, argline):
+        """ Receives a shared file into the specified location. """
+        args = shlex.split(argline)
+
+        if len(args) != 2:
+            print('usage: receive <file> <token>')
+            return
+
+        dst = args[0]
+        token = base64.b64decode(args[1])
+        pk, fp = self.auth.hybrid_decrypt(token)
+
+        (head, tail) = os.path.split(dst.rstrip('/'))
+
+        if tail == '':
+            raise ValueError('should never occur')
+
+        parent_dir = self._getpath(head)
+
+        if parent_dir is None:
+            print('{}: file not found'.format(arg))
+            return
+
+        if tail in parent_dir:
+            print('{}: already exists'.format(arg))
+            return
+
+        parent_dir.receive(dst, fp, pk)
+
     def do_ls(self, argline):
         """ Lists contents of the current working directory or provided
             directory. """
